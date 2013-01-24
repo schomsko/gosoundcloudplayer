@@ -17,6 +17,11 @@ import (
 	"unicode"
 )
 
+type SoundCloudUser struct {
+	Id       int
+	Username string
+}
+
 type SearchResult struct {
 	Title         string
 	Duration      int
@@ -24,6 +29,7 @@ type SearchResult struct {
 	Description   string
 	Permalink_url string
 	Download_url  string
+	User          SoundCloudUser
 }
 
 type SearchResults []*SearchResult
@@ -61,7 +67,7 @@ var client_id string
 func main() {
 	var client_id_arr []byte
 	client_id_arr, _ = ioutil.ReadFile("./client_id.txt")
-	client_id = string( client_id_arr )
+	client_id = string(client_id_arr)
 	var inputString string
 	var vlc *os.Process
 	r := bufio.NewReader(os.Stdin)
@@ -93,7 +99,7 @@ func main() {
 		} else if strings.HasPrefix(inputString, "i ") {
 			inputString = strings.TrimLeft(inputString, "i ")
 			index, _ := strconv.Atoi(string(inputString))
-			println(srs[index].Description)
+			println("\x1b[33m" + srs[index].Description + "\x1b[0m")
 		} else if isAllint(inputString) {
 			vlc = playAndKill(vlc, inputString)
 		} else {
@@ -131,18 +137,18 @@ func searchSoundCloud(inputString string) {
 	fmt.Fprintf(os.Stdout, "Searching %s ...\n\n", inputString)
 	iLs := inputString
 	iLs = strings.Replace(iLs, " ", "+", -1)
-	query := fmt.Sprintf("http://api.soundcloud.com/tracks.json?" +
-			"client_id=%s&q=%s" +
-			"&duration[from]=" +
-			fmt.Sprint(setting.MinD) +
-			"&duration[to]=" +
-			fmt.Sprint(setting.MaxD) +
-			"&filter=streamable,public", client_id, iLs)
+	query := fmt.Sprintf("http://api.soundcloud.com/tracks.json?"+
+		"client_id=%s&q=%s"+
+		"&duration[from]="+
+		fmt.Sprint(setting.MinD)+
+		"&duration[to]="+
+		fmt.Sprint(setting.MaxD)+
+		"&filter=streamable,public", client_id, iLs)
 	res, err := http.Get(query)
 	if err != nil {
 		log.Fatal(err)
 	}
-
+	fmt.Printf("... end of search\n")
 	resbody, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		log.Fatal(err)
@@ -179,10 +185,11 @@ func showResultList() {
 		// indicate description using info symbol '[i]'
 		desc := "    "
 		if v.Description != "" {
-			desc = " [i]"
+			desc = " \x1b[33m[i]\x1b[0m"
 		}
 
-		fmt.Printf("%s%d %s>\t %s %s  -> %s\n", filler, k, string(indi.Bytes()), desc, v.Title, d)
+		fmt.Printf("%s%d %s>\t %s %s  \x1b[36m-> %s -> %s \x1b[0m\n",
+			filler, k, string(indi.Bytes()), desc, v.Title, d, v.User.Username)
 	}
 }
 
