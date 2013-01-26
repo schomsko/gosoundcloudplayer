@@ -163,33 +163,43 @@ func searchSoundCloud(inputString string) {
 // display results
 //
 func showResultList() {
-	var filler string
+	var rank string
+	var m30Max int = 0
+	for _, v := range srs {
+		duration, _ := time.ParseDuration(fmt.Sprintf("%d%s", v.Duration/1000, "s"))
+		m30 := int(duration.Minutes()) / 30
+		if m30Max < m30 {
+			m30Max = m30
+		}
+	}
 	for k, v := range srs {
 		if k <= 9 {
-			filler = " "
+			rank = " " + strconv.Itoa(k)
 		} else {
-			filler = ""
+			rank = "" + strconv.Itoa(k)
 		}
-
-		// covert duration
+		// convert duration
 		duration, _ := time.ParseDuration(fmt.Sprintf("%d%s", v.Duration/1000, "s"))
 		d := duration.String()
-
 		// build visual duration indicator
 		m30 := int(duration.Minutes()) / 30
-		indi := bytes.NewBufferString("")
-		for i := 0; i < m30; i++ {
-			fmt.Fprint(indi, "-")
+		lengthIndicator := bytes.NewBufferString("")
+		for i := 0; i < m30Max; i++ {
+			if i < m30 {
+				fmt.Fprint(lengthIndicator, "-")
+			} else {
+				fmt.Fprint(lengthIndicator, " ")
+			}
 		}
 
 		// indicate description using info symbol '[i]'
-		desc := "    "
+		descAvail := "    "
 		if v.Description != "" {
-			desc = " \x1b[33m[i]\x1b[0m"
+			descAvail = " \x1b[33m[i]\x1b[0m"
 		}
 
-		fmt.Printf("%s%d %s>\t %s %s  \x1b[36m-> %s -> %s \x1b[0m\n",
-			filler, k, string(indi.Bytes()), desc, v.Title, d, v.User.Username)
+		fmt.Printf("%s %s %s %s  \x1b[36m-> %s -> %s \x1b[0m\n",
+			rank, string(lengthIndicator.Bytes()), descAvail, v.Title, d, v.User.Username)
 	}
 }
 
