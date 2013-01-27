@@ -17,19 +17,36 @@ import (
 	"unicode"
 )
 
+// i like globals!
+type Setting struct {
+	MinD int
+	MaxD int
+}
+
+func (s *Setting) setMinD(v string) {
+	vi, _ := strconv.Atoi(v)
+	s.MinD = vi * 60 * 1000
+}
+func (s *Setting) setMaxD(v string) {
+	vi, _ := strconv.Atoi(v)
+	s.MaxD = vi * 60 * 1000
+}
+
 type SoundCloudUser struct {
 	Id       int
 	Username string
 }
 
 type SearchResult struct {
-	Title         string
-	Duration      int
-	Stream_url    string
-	Description   string
-	Permalink_url string
-	Download_url  string
-	User          SoundCloudUser
+	Title             string
+	Created_at        string
+	Duration          int
+	Stream_url        string
+	Description       string
+	Permalink_url     string
+	Download_url      string
+	User              SoundCloudUser
+	CreatedAtFormated string
 }
 
 type SearchResults []*SearchResult
@@ -43,18 +60,10 @@ func (s ByLength) Less(i, j int) bool {
 	return s.SearchResults[i].Duration < s.SearchResults[j].Duration
 }
 
-type Setting struct {
-	MinD int
-	MaxD int
-}
+type ByAge struct{ SearchResults }
 
-func (s *Setting) setMinD(v string) {
-	vi, _ := strconv.Atoi(v)
-	s.MinD = vi * 60 * 1000
-}
-func (s *Setting) setMaxD(v string) {
-	vi, _ := strconv.Atoi(v)
-	s.MaxD = vi * 60 * 1000
+func (s ByAge) Less(i, j int) bool {
+	return s.SearchResults[i].Created_at < s.SearchResults[j].Created_at
 }
 
 var srs SearchResults
@@ -156,6 +165,7 @@ func searchSoundCloud(inputString string) {
 	res.Body.Close()
 	err = json.Unmarshal(resbody, &srs)
 	sort.Sort(ByLength{srs})
+	sort.Sort(ByAge{srs})
 	showResultList()
 }
 
@@ -197,9 +207,17 @@ func showResultList() {
 		if v.Description != "" {
 			descAvail = " \x1b[33m[i]\x1b[0m"
 		}
-
-		fmt.Printf("%s %s %s %s  \x1b[36m-> %s -> %s \x1b[0m\n",
-			rank, string(lengthIndicator.Bytes()), descAvail, v.Title, d, v.User.Username)
+		createdtime, _ := time.Parse("2006/01/02 15:04:05 +0000", v.Created_at)
+		fmt.Printf("%s %s %s %s  \x1b[36m-> %s -> %s %s %s %s \x1b[0m\n",
+			rank,
+			string(lengthIndicator.Bytes()),
+			descAvail,
+			v.Title,
+			d,
+			v.User.Username,
+			strconv.Itoa(createdtime.Year()),
+			createdtime.Month(),
+			strconv.Itoa(createdtime.Day()))
 	}
 }
 
