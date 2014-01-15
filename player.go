@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -17,7 +18,7 @@ import (
 	"unicode"
 )
 
-// i like globals!
+// contains settings
 type Setting struct {
 	MinD int
 	MaxD int
@@ -32,11 +33,16 @@ func (s *Setting) setMaxD(v string) {
 	s.MaxD = vi * 60 * 1000
 }
 
+// represents a soundcloud user account
 type SoundCloudUser struct {
-	Id       int
-	Username string
+	Id        int
+	Username  string
+	City      string
+	Website   string
+	Full_name string
 }
 
+// represents a search result
 type SearchResult struct {
 	Title             string
 	Created_at        string
@@ -47,112 +53,122 @@ type SearchResult struct {
 	Download_url      string
 	User              SoundCloudUser
 	CreatedAtFormated string
+	Downloadable      bool
 }
 
+// all search results of a search
 type SearchResults []*SearchResult
 
 func (s SearchResults) Len() int      { return len(s) }
 func (s SearchResults) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
+// a type that has a comparator method
 type ByLength struct{ SearchResults }
 
 func (s ByLength) Less(i, j int) bool {
 	return s.SearchResults[i].Duration < s.SearchResults[j].Duration
 }
 
+// a type that has a comparator method
 type ByAge struct{ SearchResults }
 
 func (s ByAge) Less(i, j int) bool {
 	return s.SearchResults[i].Created_at < s.SearchResults[j].Created_at
 }
 
-var srs SearchResults
-var setting = new(Setting)
-var client_id string
+type Player struct {
+	srs       SearchResults
+	client_id []byte
+	vlc       *os.Process
+	li        string // last input
+	setting   Setting
+}
 
-/*
- * Brace yourself - winter is coming...
- */
-func main() {
-	var client_id_arr []byte
-	client_id_arr, _ = ioutil.ReadFile("./client_id.txt")
-	client_id = string(client_id_arr)
-	var inputString string
-	var vlc *os.Process
-	r := bufio.NewReader(os.Stdin)
-
-	setting.setMinD("50")
-	setting.setMaxD("500")
-	println("Please type a search term or 'x' to exit ...")
-
-	for {
-		inputBytes, _, _ := r.ReadLine()
-		inputString = string(inputBytes)
-
-		if inputString == "x" {
-			if vlc == nil {
-				os.Exit(0)
-			} else {
-				vlc.Kill()
-				vlc = nil
-			}
-		} else if inputString == "ll" {
-			showResultList()
-		} else if strings.HasPrefix(inputString, "set ") {
-			inputString = strings.TrimLeft(inputString, "set ")
-			iLsl := strings.Split(inputString, " ")
-			if iLsl[0] == "range" {
-				setting.setMinD(iLsl[1])
-				setting.setMaxD(iLsl[2])
-			}
-		} else if strings.HasPrefix(inputString, "i ") {
-			inputString = strings.TrimLeft(inputString, "i ")
-			index, _ := strconv.Atoi(string(inputString))
-			println("\x1b[33m" + srs[index].Description + "\x1b[0m")
-		} else if isAllint(inputString) {
-			vlc = playAndKill(vlc, inputString)
-		} else {
-			searchSoundCloud(inputString)
-		}
+// exits track or program
+func (p *Player) exit() {
+	if p.vlc == nil {
+		os.Exit(0)
+	} else {
+		p.vlc.Kill()
+		p.vlc = nil
 	}
 }
 
-//
-// start and end vlc processes
-//
-func playAndKill(vlc *os.Process, inputString string) *os.Process {
-	inputint, _ := strconv.Atoi(inputString)
-	fmt.Fprintf(os.Stdout, "Playing %s ...\n", srs[inputint].Title)
-	fmt.Fprintf(os.Stdout, "%s\n", srs[inputint].Permalink_url)
-	fmt.Fprintf(os.Stdout, "%s?client_id=%s\n", srs[inputint].Download_url, client_id)
-	surl := fmt.Sprintf("%s?client_id=%s", srs[inputint].Stream_url, client_id)
-	vlcexe := exec.Command("/Applications/VLC.app/Contents/MacOS/VLC", surl)
-	err := vlcexe.Start()
+// sets Settings
+func (p *Player) set() {
+	p.li = strings.TrimLeft(p.li, "set ")
+	iLsl := strings.Split(p.li, " ")
+	if iLsl[0] == "range" {
+		p.setting.setMinD(iLsl[1])
+		p.setting.setMaxD(iLsl[2])
+	}
+}
 
+// displays info about a track
+func (p *Player) info() {
+	p.li = strings.TrimLeft(p.li, "i ")
+	index, _ := strconv.Atoi(string(p.li))
+	println("\x1b[33m" + p.srs[index].Description + "\x1b[0m")
+}
+
+// start and end vlc processes
+func (p *Player) killAndPlay() {
+	var err error
+	var vlcexe *exec.Cmd
+	var done chan bool
+	i, _ := strconv.Atoi(p.li)
+	fmt.Fprintf(os.Stdout, "Playing %s ...\n", p.srs[i].Title)
+	fmt.Fprintf(os.Stdout, "Link: \n%s\n", p.srs[i].Permalink_url)
+	fmt.Fprintf(os.Stdout, "Stream: \n%s?client_id=%s\n", p.srs[i].Stream_url, p.client_id)
+	fmt.Fprintf(os.Stdout, "Download: \n%s?client_id=%s\n", p.srs[i].Download_url, p.client_id)
+
+	durl := fmt.Sprintf("%s?client_id=%s", p.srs[i].Download_url, p.client_id)
+	surl := fmt.Sprintf("%s?client_id=%s", p.srs[i].Stream_url, p.client_id)
+
+	if !p.srs[i].Downloadable {
+		vlcexe = exec.Command("/Applications/VLC.app/Contents/MacOS/VLC", surl)
+		err = vlcexe.Start()
+		println("Streaming 128kbps ... bummer!")
+	} else {
+		client := &http.Client{}
+		resp, _ := client.Get(durl)
+
+		done := make(chan bool, 1)
+		go copyToTmp(resp, done)
+
+		time.Sleep(time.Second)
+		unixFileCmd := exec.Command("file", "/tmp/scpfile")
+		out, _ := unixFileCmd.Output()
+		fmt.Printf("Downloading and playing from local file: %s\n", out)
+
+		vlcexe = exec.Command("/Applications/VLC.app/Contents/MacOS/VLC", "/tmp/scpfile")
+		err = vlcexe.Start()
+	}
 	if err != nil {
 		log.Fatal(err)
-	} else if vlc != nil {
-		vlc.Kill()
+	} else if p.vlc != nil {
+		p.vlc.Kill()
 	}
-
-	vlc = vlcexe.Process
-	return vlc
+	p.vlc = vlcexe.Process
+	<-done
 }
 
-//
+func copyToTmp(resp *http.Response, done chan bool) {
+	file, _ := os.Create("/tmp/scpfile")
+	io.Copy(file, resp.Body)
+	fmt.Printf("%s\n", "Download finished")
+	done <- true
+}
+
 // search and fill result object
-//
-func searchSoundCloud(inputString string) {
-	fmt.Fprintf(os.Stdout, "Searching %s ...\n\n", inputString)
-	iLs := inputString
-	iLs = strings.Replace(iLs, " ", "+", -1)
+func (p *Player) searchSoundCloud() {
+	fmt.Fprintf(os.Stdout, "Searching %s ...\n\n", p.li)
 	query := fmt.Sprintf("http://api.soundcloud.com/tracks.json?"+
 		"client_id=%s&q=%s"+
-		"&duration[from]="+
-		fmt.Sprint(setting.MinD)+
-		"&duration[to]="+
-		fmt.Sprint(setting.MaxD)+
-		"&filter=streamable,public", client_id, iLs)
+		"&duration[from]="+fmt.Sprint(p.setting.MinD)+
+		"&duration[to]="+fmt.Sprint(p.setting.MaxD)+
+		"&filter=streamable,public", p.client_id,
+		strings.Replace(p.li, " ", "+", -1))
 	res, err := http.Get(query)
 	if err != nil {
 		log.Fatal(err)
@@ -163,26 +179,23 @@ func searchSoundCloud(inputString string) {
 		log.Fatal(err)
 	}
 	res.Body.Close()
-	err = json.Unmarshal(resbody, &srs)
-	sort.Sort(ByLength{srs})
-	sort.Sort(ByAge{srs})
-	showResultList()
+	err = json.Unmarshal(resbody, &p.srs)
+	sort.Sort(ByLength{p.srs})
+	sort.Sort(ByAge{p.srs})
 }
 
-//
 // display results
-//
-func showResultList() {
+func (p *Player) showResultList() {
 	var rank string
 	var m30Max int = 0
-	for _, v := range srs {
+	for _, v := range p.srs {
 		duration, _ := time.ParseDuration(fmt.Sprintf("%d%s", v.Duration/1000, "s"))
 		m30 := int(duration.Minutes()) / 30
 		if m30Max < m30 {
 			m30Max = m30
 		}
 	}
-	for k, v := range srs {
+	for k, v := range p.srs {
 		if k <= 9 {
 			rank = " " + strconv.Itoa(k)
 		} else {
@@ -207,8 +220,11 @@ func showResultList() {
 		if v.Description != "" {
 			descAvail = " \x1b[33m[i]\x1b[0m"
 		}
+		if !v.Downloadable {
+			rank = "\x1b[37m" + rank + "\x1b[0m"
+		}
 		createdtime, _ := time.Parse("2006/01/02 15:04:05 +0000", v.Created_at)
-		fmt.Printf("%s %s %s %s  \x1b[36m-> %s -> %s %s %s %s \x1b[0m\n",
+		fmt.Printf("%s %s %s %s  \x1b[36m-> %s -> %s %s %s %s\x1b[0m\n",
 			rank,
 			string(lengthIndicator.Bytes()),
 			descAvail,
@@ -221,9 +237,7 @@ func showResultList() {
 	}
 }
 
-//
 // helper functions
-//
 func isAllint(slice string) (isAllint bool) {
 	isAllint = true
 	sliceslice := []byte(slice)
@@ -233,4 +247,33 @@ func isAllint(slice string) (isAllint bool) {
 		}
 	}
 	return
+}
+
+// start
+func main() {
+	var p Player
+	p.client_id, _ = ioutil.ReadFile("./client_id.txt")
+	p.setting.MinD = 50 * 60 * 1000
+	p.setting.MaxD = 500 * 60 * 1000
+	println("Please type a search term or 'x' to exit ...")
+	r := bufio.NewReader(os.Stdin)
+	for {
+		i, _, _ := r.ReadLine()
+		p.li = string(i)
+		switch {
+		case p.li == "x":
+			p.exit()
+		case p.li == "ll":
+			p.showResultList()
+		case strings.HasPrefix(p.li, "set "):
+			p.set()
+		case strings.HasPrefix(p.li, "i "):
+			p.info()
+		case isAllint(p.li):
+			go p.killAndPlay()
+		case true:
+			p.searchSoundCloud()
+			p.showResultList()
+		}
+	}
 }
