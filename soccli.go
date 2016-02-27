@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/kardianos/osext"
 	"io"
 	"io/ioutil"
 	"log"
@@ -142,7 +143,7 @@ func (p *Player) killAndPlay() {
 		fmt.Printf("Downloading and playing from local file: %s\n", out)
 
 		//vlcexe = exec.Command("/Applications/VLC.app/Contents/MacOS/VLC", "/tmp/scpfile")
-		vlcexe = exec.Command("afplay", "-v", "0.7","/tmp/scpfile")
+		vlcexe = exec.Command("afplay", "-v", "0.7", "/tmp/scpfile")
 		err = vlcexe.Start()
 	}
 	if err != nil {
@@ -253,10 +254,11 @@ func isAllint(slice string) (isAllint bool) {
 // start
 func main() {
 	var p Player
-	p.client_id, _ = ioutil.ReadFile("./client_id.txt")
+	folderPath, _ := osext.ExecutableFolder()
+	p.client_id, _ = ioutil.ReadFile(folderPath + "/client_id.txt")
 	p.setting.MinD = 50 * 60 * 1000
 	p.setting.MaxD = 500 * 60 * 1000
-	println("Please type a search term or 'x' to exit ...")
+	println("Please type a search term or 'x' to exit ....")
 	r := bufio.NewReader(os.Stdin)
 	for {
 		i, _, _ := r.ReadLine()
