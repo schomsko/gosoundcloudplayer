@@ -78,11 +78,11 @@ func (s ByAge) Less(i, j int) bool {
 }
 
 type Player struct {
+	Setting
 	srs       SearchResults
 	client_id []byte
 	vlc       *os.Process
 	li        string // last input
-	Setting
 }
 
 // exits track or program
@@ -182,8 +182,6 @@ func (p *Player) searchSoundCloud() {
 	}
 	res.Body.Close()
 	err = json.Unmarshal(resbody, &p.srs)
-	sort.Sort(ByLength{p.srs})
-	sort.Sort(ByAge{p.srs})
 }
 
 // display results
@@ -276,6 +274,8 @@ func main() {
 			go p.killAndPlay()
 		case true:
 			p.searchSoundCloud()
+			sort.Sort(ByLength{p.srs})
+			sort.Sort(ByAge{p.srs})
 			p.showResultList()
 		}
 	}
