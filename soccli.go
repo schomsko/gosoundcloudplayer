@@ -82,7 +82,7 @@ type Player struct {
 	client_id []byte
 	vlc       *os.Process
 	li        string // last input
-	setting   Setting
+	Setting
 }
 
 // exits track or program
@@ -100,8 +100,8 @@ func (p *Player) set() {
 	p.li = strings.TrimLeft(p.li, "set ")
 	iLsl := strings.Split(p.li, " ")
 	if iLsl[0] == "range" {
-		p.setting.setMinD(iLsl[1])
-		p.setting.setMaxD(iLsl[2])
+		p.setMinD(iLsl[1])
+		p.setMaxD(iLsl[2])
 	}
 }
 
@@ -167,8 +167,8 @@ func (p *Player) searchSoundCloud() {
 	fmt.Fprintf(os.Stdout, "Searching %s ...\n\n", p.li)
 	query := fmt.Sprintf("http://api.soundcloud.com/tracks.json?"+
 		"client_id=%s&q=%s"+
-		"&duration[from]="+fmt.Sprint(p.setting.MinD)+
-		"&duration[to]="+fmt.Sprint(p.setting.MaxD)+
+		"&duration[from]="+fmt.Sprint(p.MinD)+
+		"&duration[to]="+fmt.Sprint(p.MaxD)+
 		"&filter=streamable,public", p.client_id,
 		strings.Replace(p.li, " ", "+", -1))
 	res, err := http.Get(query)
@@ -256,8 +256,8 @@ func main() {
 	var p Player
 	folderPath, _ := osext.ExecutableFolder()
 	p.client_id, _ = ioutil.ReadFile(folderPath + "/client_id.txt")
-	p.setting.MinD = 50 * 60 * 1000
-	p.setting.MaxD = 500 * 60 * 1000
+	p.MinD = 50 * 60 * 1000
+	p.MaxD = 500 * 60 * 1000
 	println("Please type a search term or 'x' to exit ....")
 	r := bufio.NewReader(os.Stdin)
 	for {
